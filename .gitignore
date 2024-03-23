@@ -1,0 +1,25 @@
+# Node.js / Express.js specific
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Environment variables
+.env
+
+# Compiled binary files
+# *.exe
+
+# Logs
+logs/
+*.log
+
+# macOS
+.DS_Store
+
+# IDE files
+.vscode/
+.idea/
+
+# Dependencies
+package-lock.json
+yarn.lock
