@@ -1,10 +1,9 @@
 const express = require("express");
 const fsExtra = require("fs-extra");
-const { exec } = require("child_process");
 const path = require("path");
 const dotenv = require("dotenv");
-const mongoose = require("mongoose");
-const Video = require("./models/video"); // Import your Mongoose model
+const ytdl = require("ytdl-core"); // Import ytdl-core
+const fs = require("fs");
 
 dotenv.config();
 
@@ -12,14 +11,12 @@ const app = express();
 
 app.get("/download", async (req, res) => {
   const videoId = req.query.videoId;
-  const ipAddress = req.ip;
 
   try {
     if (!videoId) {
       throw new Error("Video ID is required");
     }
 
-    const ytDlpPath = path.join(__dirname, "bin", "yt-dlp.exe");
     const videoFilename = videoId + ".mp4";
     const videosDir = path.resolve(__dirname, "videos"); // Directory where videos should be saved
     const videoPath = path.resolve(videosDir, videoFilename); // Construct the absolute video path
@@ -27,43 +24,21 @@ app.get("/download", async (req, res) => {
     // Create videos directory if it doesn't exist
     await fsExtra.ensureDir(videosDir);
 
-    const command = `${ytDlpPath} -o ${videoPath} https://www.youtube.com/watch?v=${videoId}`;
+    const writeStream = ytdl(`https://www.youtube.com/watch?v=${videoId}`).pipe(
+      fs.createWriteStream("video.mp4")
+    );
 
-    await new Promise((resolve, reject) => {
-      exec(command, async (error, stdout, stderr) => {
-        if (error) {
-          console.error("Error downloading video:", error);
-          return reject("Failed to download video");
-        }
-        if (stderr) {
-          console.error("YT-DLP stderr:", stderr);
-        }
+    writeStream.on("finish", async () => {
+      console.log("Video download completed");
 
-        console.log("Video download completed");
-
-        // Read the downloaded video file as binary data
-        const videoData = await fsExtra.readFile(videoPath);
-
-        // Save video metadata and binary data to MongoDB using Mongoose
-        await Video.create({
-          video: videoId,
-          ip_address: ipAddress,
-          videoData: {
-            data: videoData,
-            contentType: "video/mp4", // Assuming the video file type is MP4
-          },
-        });
-
-        resolve();
-      });
+      // Send the video file to the client
+      res.sendFile(videoPath);
     });
 
-    if (await fsExtra.pathExists(videoPath)) {
-      res.sendFile(videoPath); // Send the file only if it exists
-    } else {
-      console.error("Downloaded video file not found at:", videoPath);
-      throw new Error("Downloaded video file not found");
-    }
+    writeStream.on("error", (error) => {
+      console.error("Error writing video file:", error);
+      res.status(500).json({ error: "Failed to save video file" });
+    });
   } catch (error) {
     console.error("Error handling download request:", error);
     return res
@@ -71,15 +46,6 @@ app.get("/download", async (req, res) => {
       .json({ error: error.message || "Unknown error occurred" });
   }
 });
-
-mongoose
-  .connect(process.env.MONGO_URL)
-  .then(() => {
-    console.log("connected to mongo-db");
-  })
-  .catch(() => {
-    console.error("error connecting to Mongodb");
-  });
 
 const PORT = 4000;
 app.listen(PORT, () => {
